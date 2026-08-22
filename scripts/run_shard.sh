@@ -24,14 +24,21 @@ ENC=$(find vtm/bin vtm/build -type f -name 'EncoderApp*' ! -name '*.cmake' ! -na
 [ -n "$ENC" ] && [ -x "$ENC" ] || { echo 'EncoderApp binary not found; candidates:'; find vtm -maxdepth 4 -type d -name bin; find vtm -name 'EncoderApp*' -type f | head; exit 4; }
 echo "encoder: $ENC"
 
+EXTRA=()
+# Our 8 sequences are the HEVC-era CTC set; VTM's cfg/per-sequence/ may not
+# carry them, so per-sequence parameters must be explicit. CTC RA IntraPeriod
+# is ~1 s aligned to the GOP: 32 for fps<=30, 64 for fps>=50. LD keeps the
+# base-cfg default (first frame intra only); AI is all-intra by definition.
+if [ "$CFG" = "RA" ]; then
+  if [ "$FPS" -ge 50 ]; then EXTRA+=(--IntraPeriod=64); else EXTRA+=(--IntraPeriod=32); fi
+fi
+PERSEQ="vtm/cfg/per-sequence/${SEQ}.cfg"
+[ -f "$PERSEQ" ] && EXTRA+=(-c "$PERSEQ")
+
 OUT="shards/${CFG}_${SEQ}_${QP}"
 mkdir -p "$OUT"
 # The instrumentation patch reads TRACE_DIR and writes S1/S2/S3 csv.gz there.
 export TRACE_DIR="$PWD/$OUT"
-
-PERSEQ="vtm/cfg/per-sequence/${SEQ}.cfg"
-EXTRA=()
-[ -f "$PERSEQ" ] && EXTRA+=(-c "$PERSEQ")
 
 set +e
 time "$ENC" \
@@ -47,6 +54,9 @@ if [ $RC -ne 0 ]; then
   tail -40 "$OUT/encoder.log"
   exit 5
 fi
+
+# record the exact encoder configuration lines for the manifest / V-checks
+grep -m40 -E 'Version|IntraPeriod|GOP|QP|Frame|Bit' "$OUT/encoder.log" > "$OUT/encoder_config_head.txt" || true
 
 gzip -f "$OUT/encoder.log"
 rm -f "$OUT/str.bin"          # bitstream not needed for the campaign
