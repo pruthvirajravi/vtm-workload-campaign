@@ -19,6 +19,11 @@ esac
 YUV="seq/${SEQ}.yuv"
 [ -f "$YUV" ] || { echo "missing $YUV - sequence fetch failed"; exit 3; }
 
+# locate the built encoder - VTM's BBuildEnv puts binaries under vtm/bin/...
+ENC=$(find vtm/bin vtm/build -type f -name 'EncoderApp*' ! -name '*.cmake' ! -name '*.o' 2>/dev/null | head -1)
+[ -n "$ENC" ] && [ -x "$ENC" ] || { echo 'EncoderApp binary not found; candidates:'; find vtm -maxdepth 4 -type d -name bin; find vtm -name 'EncoderApp*' -type f | head; exit 4; }
+echo "encoder: $ENC"
+
 OUT="shards/${CFG}_${SEQ}_${QP}"
 mkdir -p "$OUT"
 # The instrumentation patch reads TRACE_DIR and writes S1/S2/S3 csv.gz there.
@@ -28,12 +33,20 @@ PERSEQ="vtm/cfg/per-sequence/${SEQ}.cfg"
 EXTRA=()
 [ -f "$PERSEQ" ] && EXTRA+=(-c "$PERSEQ")
 
-time ./vtm/build/source/App/EncoderApp/EncoderApp \
+set +e
+time "$ENC" \
   -c "vtm/cfg/${CFGF}" "${EXTRA[@]}" \
   -i "$YUV" -wdt "$W" -hgt "$H" -fr "$FPS" -f "$FRAMES" \
   --InputBitDepth="$BD" -q "$QP" \
   -b "$OUT/str.bin" -o /dev/null \
   > "$OUT/encoder.log" 2>&1
+RC=$?
+set -e
+if [ $RC -ne 0 ]; then
+  echo "=== encoder exited $RC - log tail ==="
+  tail -40 "$OUT/encoder.log"
+  exit 5
+fi
 
 gzip -f "$OUT/encoder.log"
 rm -f "$OUT/str.bin"          # bitstream not needed for the campaign
