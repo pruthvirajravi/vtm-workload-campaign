@@ -83,7 +83,7 @@ jobs:
 
       - name: build
         run: |
-          command -v ccache >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q ccache; }
+          { command -v ccache >/dev/null && command -v g++-12 >/dev/null; } || { sudo apt-get update -q && sudo apt-get install -y -q ccache g++-12; }
           bash scripts/build_vtm.sh
 
       - name: encode
