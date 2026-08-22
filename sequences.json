@@ -1,0 +1,11 @@
+{
+  "_comment": "Core reconciliation set (Phase-1). frames per CTC (~10 s, fps x 10). VERIFY frame counts against the CTC doc / cfg files in use.",
+  "BQMall":      {"class": "C", "width": 832,  "height": 480, "fps": 60, "frames": 600, "bitdepth": 8, "heavy": false},
+  "BQSquare":    {"class": "D", "width": 416,  "height": 240, "fps": 60, "frames": 600, "bitdepth": 8, "heavy": false},
+  "RaceHorsesC": {"class": "C", "width": 832,  "height": 480, "fps": 30, "frames": 300, "bitdepth": 8, "heavy": false},
+  "RaceHorsesD": {"class": "D", "width": 416,  "height": 240, "fps": 30, "frames": 300, "bitdepth": 8, "heavy": false},
+  "FourPeople":  {"class": "E", "width": 1280, "height": 720, "fps": 60, "frames": 600, "bitdepth": 8, "heavy": true},
+  "Johnny":      {"class": "E", "width": 1280, "height": 720, "fps": 60, "frames": 600, "bitdepth": 8, "heavy": true},
+  "Kimono":      {"class": "B", "width": 1920, "height": 1080, "fps": 24, "frames": 240, "bitdepth": 8, "heavy": true},
+  "ParkScene":   {"class": "B", "width": 1920, "height": 1080, "fps": 24, "frames": 240, "bitdepth": 8, "heavy": true}
+}
