@@ -41,7 +41,7 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           ids = json.loads(os.environ["DRIVE_IDS"])
-          subprocess.run(["gdown", "--id", ids["BQSquare"], "-O", "seq/BQSquare.yuv"], check=True)
+          subprocess.run(["gdown", ids["BQSquare"], "-O", "seq/BQSquare.yuv"], check=True)
           PY
           ls -l seq/
 
