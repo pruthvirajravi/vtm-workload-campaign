@@ -1,0 +1,71 @@
+name: smoke
+# Pipeline validation: build VTM + encode 30 frames of BQSquare AI QP32.
+# Run this FIRST, and again after the instrumentation patch lands.
+on:
+  workflow_dispatch:
+    inputs:
+      frames:
+        description: frames to encode
+        default: "30"
+
+env:
+  VTM_TAG: VTM-17.0   # PLACEHOLDER - MUST match the Phase-1 runs (check V5)
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ env.VTM_TAG }}-${{ runner.os }}
+
+      - name: sequence cache
+        id: seqcache
+        uses: actions/cache@v4
+        with:
+          path: seq
+          key: seq-BQSquare-v1
+
+      - name: fetch sequence (cache miss)
+        if: steps.seqcache.outputs.cache-hit != 'true'
+        env:
+          DRIVE_IDS: ${{ secrets.DRIVE_IDS }}
+        run: |
+          pip install -q gdown
+          mkdir -p seq
+          python3 - <<'PY'
+          import json, os, subprocess
+          ids = json.loads(os.environ["DRIVE_IDS"])
+          subprocess.run(["gdown", "--id", ids["BQSquare"], "-O", "seq/BQSquare.yuv"], check=True)
+          PY
+          ls -l seq/
+
+      - name: build
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ccache
+          bash scripts/build_vtm.sh
+
+      - name: encode
+        run: bash scripts/run_shard.sh BQSquare AI 32 "${{ inputs.frames }}"
+
+      - name: validate
+        run: python3 scripts/validate_shard.py shards/AI_BQSquare_32 || true
+
+      - name: upload shard to Drive (small-unit collection)
+        env:
+          GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
+          DRIVE_OUT_FOLDER: ${{ secrets.DRIVE_OUT_FOLDER }}
+        run: |
+          pip install -q google-api-python-client google-auth
+          python3 scripts/upload_to_drive.py shards/AI_BQSquare_32
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-AI_BQSquare_32
+          path: shards/
+          retention-days: 30
