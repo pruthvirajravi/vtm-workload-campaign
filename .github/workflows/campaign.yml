@@ -1,0 +1,107 @@
+name: campaign
+# Full data-collection matrix. Dispatch with filters; heavy shards
+# (class B/E inter configs, >6 h single-thread) go to the self-hosted
+# GCP runner via runner=self-hosted.
+on:
+  workflow_dispatch:
+    inputs:
+      seqs:
+        description: comma list of sequences (or "all")
+        default: "BQSquare,RaceHorsesD"
+      cfgs:
+        description: comma list of AI,RA,LDB,LDP (or "all")
+        default: "AI"
+      qps:
+        description: comma list of QPs (or "all")
+        default: "22,27,32,37"
+      runner:
+        description: ubuntu-latest | self-hosted
+        default: "ubuntu-latest"
+
+env:
+  VTM_TAG: VTM-17.0   # PLACEHOLDER - MUST match the Phase-1 runs (check V5)
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.mk.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: mk
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          seqs = "${{ inputs.seqs }}"; cfgs = "${{ inputs.cfgs }}"; qps = "${{ inputs.qps }}"
+          allseq = list(json.load(open("sequences.json")).keys())
+          allseq = [s for s in allseq if not s.startswith("_")]
+          S = allseq if seqs == "all" else [s.strip() for s in seqs.split(",")]
+          C = ["AI","RA","LDB","LDP"] if cfgs == "all" else [c.strip() for c in cfgs.split(",")]
+          Q = [22,27,32,37] if qps == "all" else [int(q) for q in qps.split(",")]
+          inc = [{"seq": s, "cfg": c, "qp": q} for s in S for c in C for q in Q]
+          print("matrix=" + json.dumps({"include": inc}))
+          PY
+
+  shard:
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 355          # hosted cap is 6 h; self-hosted ignores this scale
+    strategy:
+      fail-fast: false
+      max-parallel: 18            # stay under the 20-concurrent free limit
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: ${{ matrix.cfg }}-${{ matrix.seq }}-q${{ matrix.qp }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ env.VTM_TAG }}-${{ runner.os }}
+
+      - name: sequence cache
+        id: seqcache
+        uses: actions/cache@v4
+        with:
+          path: seq
+          key: seq-${{ matrix.seq }}-v1
+
+      - name: fetch sequence (cache miss)
+        if: steps.seqcache.outputs.cache-hit != 'true'
+        env:
+          DRIVE_IDS: ${{ secrets.DRIVE_IDS }}
+        run: |
+          pip install -q gdown
+          mkdir -p seq
+          python3 - <<'PY'
+          import json, os, subprocess
+          ids = json.loads(os.environ["DRIVE_IDS"])
+          subprocess.run(["gdown", "--id", ids["${{ matrix.seq }}"],
+                          "-O", "seq/${{ matrix.seq }}.yuv"], check=True)
+          PY
+
+      - name: build
+        run: |
+          command -v ccache >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q ccache; }
+          bash scripts/build_vtm.sh
+
+      - name: encode
+        run: bash scripts/run_shard.sh "${{ matrix.seq }}" "${{ matrix.cfg }}" "${{ matrix.qp }}"
+
+      - name: validate
+        run: python3 scripts/validate_shard.py "shards/${{ matrix.cfg }}_${{ matrix.seq }}_${{ matrix.qp }}" || true
+
+      - name: upload shard to Drive (small-unit collection)
+        env:
+          GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
+          DRIVE_OUT_FOLDER: ${{ secrets.DRIVE_OUT_FOLDER }}
+        run: |
+          pip install -q google-api-python-client google-auth
+          python3 scripts/upload_to_drive.py "shards/${{ matrix.cfg }}_${{ matrix.seq }}_${{ matrix.qp }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.cfg }}_${{ matrix.seq }}_${{ matrix.qp }}
+          path: shards/
+          retention-days: 90
