@@ -47,7 +47,7 @@ jobs:
 
       - name: build
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q ccache
+          sudo apt-get update -q && sudo apt-get install -y -q ccache g++-12
           bash scripts/build_vtm.sh
 
       - name: encode
