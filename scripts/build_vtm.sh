@@ -17,10 +17,14 @@ for p in ../patch/*.patch; do
   git apply --check "$p" && git apply "$p"
 done
 
-# Toolchain: older VTM tags predate GCC 13's stricter libstdc++ headers
-# ('uint32_t does not name a type' in TypeDef.h). Prefer g++-12 when present
-# and force-include <cstdint>. TOOLCHAIN-SIDE ONLY - no VTM source change,
-# the reference model stays bit-exact.
+# --- toolchain compatibility, BUILD SYSTEM ONLY (encoder source untouched) --
+# 1) old VTM tags predate GCC 13 ('uint32_t does not name a type'):
+#    prefer g++-12 and force-include <cstdint>.
+# 2) VTM sets -Werror; newer compilers emit warnings VTM never saw
+#    (array comparison, address-never-null). Strip -Werror from the cmake
+#    build config so warnings stay warnings.
+grep -rl -- "-Werror" CMakeLists.txt cmake 2>/dev/null | xargs -r sed -i 's/-Werror//g'
+
 CCBIN="${CCBIN:-$(command -v gcc-12 || command -v gcc)}"
 CXXBIN="${CXXBIN:-$(command -v g++-12 || command -v g++)}"
 echo "compiler: $CXXBIN"
